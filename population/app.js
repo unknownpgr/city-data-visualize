@@ -2,12 +2,8 @@ import React, { useState } from 'react';
 import { render } from 'react-dom';
 import { StaticMap } from 'react-map-gl';
 import DeckGL from '@deck.gl/react';
-import { GeoJsonLayer, PolygonLayer } from '@deck.gl/layers';
+import { GeoJsonLayer } from '@deck.gl/layers';
 import { LightingEffect, AmbientLight, _SunLight as SunLight } from '@deck.gl/core';
-//import {scaleThreshold} from 'd3-scale';
-import { scaleSequential } from 'd3-scale';
-//import {interpolateRainbow} from 'd3-scale-chromatic';
-import { interpolateOrRd } from 'd3-scale-chromatic';
 import { readString } from "react-papaparse";
 
 // "MapboxAccessToken" 환경변수값
