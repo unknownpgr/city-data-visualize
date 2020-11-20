@@ -65,9 +65,13 @@ function color(x) {
 }
 
 function getTooltip({ object }) {
-  return object && `\
-  <div>TEST<div>
-  `;
+  return object && {
+    html: `\
+    <div>
+    TEST!
+    </div>
+    `
+  };
 }
 
 export default function App({ geoJson, facilMean, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
