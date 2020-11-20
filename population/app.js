@@ -53,28 +53,12 @@ const dirLight = new SunLight({
 });
 
 function getTooltip({ object }) {
-  return (
-    object && {
-      html: `\
-      <div><b>${object.properties.adm_nm}</b></div>
-      <div>총인구수: ${object.properties.population.total.toLocaleString()} 
-        (남 ${object.properties.population.total_m.toLocaleString()} / 
-        여 ${object.properties.population.total_f.toLocaleString()}) </div>
-      <div>내국인수: ${object.properties.population.citizens.toLocaleString()} 
-        (남 ${object.properties.population.citizens_m.toLocaleString()} / 
-        여 ${object.properties.population.citizens_f.toLocaleString()}) </div>
-      <div>외국인수: ${object.properties.population.foreigners.toLocaleString()} 
-        (남 ${object.properties.population.foreigners_m.toLocaleString()} / 
-        여 ${object.properties.population.foreigners_f.toLocaleString()}) </div>
-      <div>총세대수: ${object.properties.population.households.toLocaleString()} </div>
-      <div>세대당 인구: ${object.properties.population.per_household.toLocaleString()} </div>
-      <div>고령자(65세 이상): ${object.properties.population.seniors.toLocaleString()} </div>
-  `
-    }
-  );
+  return object && `
+  <div>TEST<div>
+  `;
 }
 
-export default function App({ data = DATA_URL, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
+export default function App({ geoJson, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
 
   const [effects] = useState(() => {
     const lightingEffect = new LightingEffect({ ambientLight, dirLight });
@@ -96,15 +80,15 @@ export default function App({ data = DATA_URL, mapStyle = 'mapbox://styles/mapbo
 
     // reference: https://deck.gl/docs/api-reference/layers/geojson-layer
     new GeoJsonLayer({
-      id: 'population',
-      data,
+      id: 'test',
+      geoJson,
       opacity: 0.9,
       stroked: false,
       filled: true,
       extruded: true,
       wireframe: true,
-      getElevation: f => f.properties.population.total * 0.05,
-      getFillColor: f => COLOR_SCALE(f.properties.population.per_household),
+      getElevation: f => 1000,
+      getFillColor: f => [255, 255, 255],
       getLineColor: [255, 255, 255],
       pickable: true
     })
@@ -128,58 +112,45 @@ export default function App({ data = DATA_URL, mapStyle = 'mapbox://styles/mapbo
   );
 }
 
-export function renderToDOM(container) {
+export async function renderToDOM(container) {
 
-  const DATA_CSV = "stat_population_Seoul.txt";
-  const DATA_JSON = 'HangJeongDong_ver20200701.geojson';
+  const file_pathes = [
+    "young.txt",
+    "facility.txt",
+    "HangJeongDong_ver20200701.geojson"
+  ];
 
-  // 두 파일을 비동기적으로 읽기
-  Promise.all([
-    fetch(DATA_CSV).then(response => response.text()),
-    fetch(DATA_JSON).then(response => response.json())
-  ])
-    .then(function (values) {
+  // Read all files asynchronously
+  const files = await Promise.all(file_pathes.map(f => fetch(f)));
 
-      // parse the CVS file using papaparse library function
-      const result = readString(values[0]);
+  // Parse files
+  const proper = x => ['동', '계', '합계', '소계', '미상', '행정동'].indexOf(x[2]) < 0;
+  const fix = x => {
+    x = x.slice(2);
+    x[0] = x[0].replace(/[.]/g, '·');
+    return x;
+  };
+  const parse = async file => readString(await file.text()).data.filter(proper).map(fix);
+  const young = (await parse(files[0])).map(x => [x[0], [x[1], x[2], x[3]].map(v => +v.replace(/,/g, ''))]);
+  const facil = (await parse(files[1])).map(x => [x[0], +x[1].replace(/,/g, '')]);
+  let geoJson = await files[2].json();
+  geoJson.features = geoJson.features.filter(x => x.properties.sidonm == '서울특별시');
 
-      // A helper function to parse numbers with thousand separator
-      const parseIntComma = s => parseFloat(s.split(",").join(""));
 
-      // Build population dictionary (동이름을 key로 사용)
-      let dict_population = {};
-      for (const row of result.data) {
-        // 두 데이터의 동이름을 같게 하기 위해 인구데이터의 동이름에 포함된 "."를 모두 "·"로 치환
-        let key = row[2].replaceAll(".", "·");
+  // Build dictionary
+  let data = {};
+  geoJson.features.forEach(region => {
+    let name = region.properties.adm_nm.split(' ').pop();
+    data[name] = {};
+  });
+  young.forEach(row => data[row[0]]['young'] = row[1]);
+  facil.forEach(row => data[row[0]]['facil'] = row[1]);
 
-        dict_population[key] = {
-          total: parseIntComma(row[4]),  // 총인구수
-          total_m: parseIntComma(row[5]),  // 남성인구수
-          total_f: parseIntComma(row[6]),  // 여성인구수
-          citizens: parseIntComma(row[7]), // 총내국인수
-          citizens_m: parseIntComma(row[8]), // 남자내국인수
-          citizens_f: parseIntComma(row[9]), // 여자내국인수
-          foreigners: parseIntComma(row[10]), // 총외국인수
-          foreigners_m: parseIntComma(row[11]), // 남자외국인수
-          foreigners_f: parseIntComma(row[12]), // 여자외국인수
-          households: parseIntComma(row[3]), // 세대수
-          per_household: parseIntComma(row[13]), // 세대별 평균 인구수
-          seniors: parseIntComma(row[14]),  // 고령자(65세 이상)
-        };
-      }
+  // Map
+  geoJson.features.forEach(region => {
+    let name = region.properties.adm_nm.split(' ').pop();
+    region.properties.test = data[name];
+  });
 
-      // 서울특별시 데이터만 필터링
-      let filtered_features = values[1].features.filter(f => f.properties.sidonm == "서울특별시");
-
-      // 각 동마다 인구정보를 추가
-      filtered_features.forEach(function (f, idx) {
-        // 각 동이름에는 "서울특별시"와 "구명"이 포함되어 있으므로 이를 제거
-        this[idx].properties.population =
-          dict_population[f.properties.adm_nm.split(" ")[2]];
-      }, filtered_features);
-
-      values[1].features = filtered_features;
-
-      render(<App data={values[1]} />, container);
-    });
+  render(<App geoJson={geoJson} />, container);
 }
