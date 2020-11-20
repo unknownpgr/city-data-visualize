@@ -16,19 +16,6 @@ if (!MAPBOX_TOKEN || MAPBOX_TOKEN.length < 2) {
   MAPBOX_TOKEN = 'pk.eyJ1IjoidW5rbm93bnBnciIsImEiOiJja2hxZnFqNmowNjhiMnJuZHJtbWV1d2Z4In0.ovJu9rfRUyO-TAuKzpCcQw';
 }
 
-export const COLOR_SCALE = x =>
-  // https://github.com/d3/d3-scale-chromatic
-  (
-    scaleSequential()
-      .domain([0, 4])
-      //    .interpolator(interpolateRainbow)(x)
-      .interpolator(interpolateOrRd)
-  )(x) // return a string color "rgb(R,G,B)"
-    .slice(4, -1)  // extract "R,G,B"
-    .split(',') // spline into an array ["R", "G", "B"]
-    .map(x => parseInt(x, 10));  // convert to [R, G, B]
-
-
 const INITIAL_VIEW_STATE = {
   // 서울시청 좌표
   latitude: 37.5663,
@@ -47,18 +34,47 @@ const ambientLight = new AmbientLight({
 const dirLight = new SunLight({
   timestamp: Date.UTC(2019, 7, 1, 22),
   color: [255, 255, 255],
-  intensity: 1.0,
-  //  _shadow: true
-  _shadow: false
+  intensity: 1,
+  // _shadow: true
+  // _shadow: false
 });
 
+function HSVtoRGB(h, s, v) {
+  var r, g, b, i, f, p, q, t;
+  if (arguments.length === 1) {
+    s = h.s, v = h.v, h = h.h;
+  }
+  i = Math.floor(h * 6);
+  f = h * 6 - i;
+  p = v * (1 - s);
+  q = v * (1 - f * s);
+  t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: r = v, g = t, b = p; break;
+    case 1: r = q, g = v, b = p; break;
+    case 2: r = p, g = v, b = t; break;
+    case 3: r = p, g = q, b = v; break;
+    case 4: r = t, g = p, b = v; break;
+    case 5: r = v, g = p, b = q; break;
+  }
+  return [
+    Math.round(r * 255),
+    Math.round(g * 255),
+    Math.round(b * 255)
+  ];
+}
+
+function color(x) {
+  return HSVtoRGB(x / 3, 1, 1);
+}
+
 function getTooltip({ object }) {
-  return object && `
+  return object && `\
   <div>TEST<div>
   `;
 }
 
-export default function App({ geoJson, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
+export default function App({ geoJson, facilMean, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
 
   const [effects] = useState(() => {
     const lightingEffect = new LightingEffect({ ambientLight, dirLight });
@@ -81,14 +97,14 @@ export default function App({ geoJson, mapStyle = 'mapbox://styles/mapbox/light-
     // reference: https://deck.gl/docs/api-reference/layers/geojson-layer
     new GeoJsonLayer({
       id: 'test',
-      geoJson,
+      data: geoJson,
       opacity: 0.9,
       stroked: false,
       filled: true,
       extruded: true,
       wireframe: true,
-      getElevation: f => 1000,
-      getFillColor: f => [255, 255, 255],
+      getElevation: f => f.data.young[0] * 10,
+      getFillColor: f => color(f.data.facil / 2 / facilMean),
       getLineColor: [255, 255, 255],
       pickable: true
     })
@@ -141,16 +157,21 @@ export async function renderToDOM(container) {
   let data = {};
   geoJson.features.forEach(region => {
     let name = region.properties.adm_nm.split(' ').pop();
-    data[name] = {};
+    data[name] = { young: [0, 0, 0], facil: 0 };
   });
   young.forEach(row => data[row[0]]['young'] = row[1]);
-  facil.forEach(row => data[row[0]]['facil'] = row[1]);
+  facil.forEach(row => data[row[0]]['facil'] = row[1] / (1 + data[row[0]]['young'][1]));
+  console.log(data);
 
   // Map
+  let facilMean = 0;
+  let facilCount = 0;
   geoJson.features.forEach(region => {
     let name = region.properties.adm_nm.split(' ').pop();
-    region.properties.test = data[name];
+    region.data = data[name];
+    facilMean += data[name].facil;
+    facilCount++;
   });
-
-  render(<App geoJson={geoJson} />, container);
+  facilMean /= facilCount;
+  render(<App geoJson={geoJson} facilMean={facilMean} />, container);
 }
