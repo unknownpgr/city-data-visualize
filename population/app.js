@@ -63,6 +63,8 @@ function HSVtoRGB(h, s, v) {
 }
 
 function color(x) {
+  // 0 = RED
+  // 1/3 = GREEN
   return HSVtoRGB(x / 3, 1, 1);
 }
 
@@ -70,7 +72,7 @@ function getTooltip({ object }) {
   return object && {
     html: `\
     <div>
-    TEST!
+      <h1>${object.properties.adm_nm}</h1>
     </div>
     `
   };
@@ -106,7 +108,7 @@ export default function App({ geoJson, facilMean, mapStyle = 'mapbox://styles/ma
       extruded: true,
       wireframe: true,
       getElevation: f => f.data.young[0] * 10,
-      getFillColor: f => color(f.data.facil / 2 / facilMean),
+      getFillColor: f => color((f.data.facil / facilMean) > 2 ? 2 : (f.data.facil / facilMean)),
       getLineColor: [255, 255, 255],
       pickable: true
     })
@@ -162,7 +164,7 @@ export async function renderToDOM(container) {
     data[name] = { young: [0, 0, 0], facil: 0 };
   });
   young.forEach(row => data[row[0]]['young'] = row[1]);
-  facil.forEach(row => data[row[0]]['facil'] = row[1] / (1 + data[row[0]]['young'][1]));
+  facil.forEach(row => data[row[0]]['facil'] = row[1] / (data[row[0]]['young'][0]));
   console.log(data);
 
   // Map
@@ -170,9 +172,9 @@ export async function renderToDOM(container) {
   let facilCount = 0;
   geoJson.features.forEach(region => {
     let name = region.properties.adm_nm.split(' ').pop();
-    region.data = data[name];
     facilMean += data[name].facil;
     facilCount++;
+    region.data = data[name];
   });
   facilMean /= facilCount;
   render(<App geoJson={geoJson} facilMean={facilMean} />, container);
