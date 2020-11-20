@@ -73,12 +73,20 @@ function getTooltip({ object }) {
     html: `\
     <div>
       <h1>${object.properties.adm_nm}</h1>
+      <div>출생 인구 수</div>
+      <ul>
+      <li>전체 : ${object.data.young[0]}</li>
+      <li>남 : ${object.data.young[1]}</li>
+      <li>여 : ${object.data.young[2]}</li>
+      </ul>
+      <div>보육시설 수 : ${object.data.facil}</div>
+      <div>보육시설/출생 인구 비 : ${Math.round(object.data.ratio * 100)}%</div>
     </div>
     `
   };
 }
 
-export default function App({ geoJson, facilMean, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
+export default function App({ geoJson, ratioMean, mapStyle = 'mapbox://styles/mapbox/light-v9' }) {
 
   const [effects] = useState(() => {
     const lightingEffect = new LightingEffect({ ambientLight, dirLight });
@@ -108,7 +116,7 @@ export default function App({ geoJson, facilMean, mapStyle = 'mapbox://styles/ma
       extruded: true,
       wireframe: true,
       getElevation: f => f.data.young[0] * 10,
-      getFillColor: f => color((f.data.facil / facilMean) > 2 ? 2 : (f.data.facil / facilMean)),
+      getFillColor: f => color((f.data.ratio / ratioMean) > 2 ? 2 : (f.data.ratio / ratioMean)),
       getLineColor: [255, 255, 255],
       pickable: true
     })
@@ -164,18 +172,20 @@ export async function renderToDOM(container) {
     data[name] = { young: [0, 0, 0], facil: 0 };
   });
   young.forEach(row => data[row[0]]['young'] = row[1]);
-  facil.forEach(row => data[row[0]]['facil'] = row[1] / (data[row[0]]['young'][0]));
+  facil.forEach(row => data[row[0]]['facil'] = row[1]);
   console.log(data);
 
   // Map
-  let facilMean = 0;
-  let facilCount = 0;
+  let ratioMean = 0;
+  let count = 0;
   geoJson.features.forEach(region => {
     let name = region.properties.adm_nm.split(' ').pop();
-    facilMean += data[name].facil;
-    facilCount++;
-    region.data = data[name];
+    let row = data[name];
+    row.ratio = row.young[0] ? row.facil / row.young[0] : 0;
+    ratioMean += row.ratio;
+    count++;
+    region.data = row;
   });
-  facilMean /= facilCount;
-  render(<App geoJson={geoJson} facilMean={facilMean} />, container);
+  ratioMean /= count;
+  render(<App geoJson={geoJson} ratioMean={ratioMean} />, container);
 }
