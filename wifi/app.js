@@ -4,7 +4,6 @@ import { StaticMap } from 'react-map-gl';
 import { AmbientLight, PointLight, LightingEffect } from '@deck.gl/core';
 import { HexagonLayer } from '@deck.gl/aggregation-layers';
 import DeckGL from '@deck.gl/react';
-import { readString } from "react-papaparse";
 
 // Set your mapbox token here
 let MAPBOX_TOKEN = process.env.MapboxAccessToken; // eslint-disable-line
@@ -51,54 +50,81 @@ const INITIAL_VIEW_STATE = {
 // 더 많은 세팅: https://colorbrewer2.org
 // set "Number of data classes" to 6
 export const colorRange = [
-  [237, 248, 251],
-  [204, 236, 230],
-  [153, 216, 201],
-  [102, 194, 164],
-  [44, 162, 95],
-  [0, 109, 44]
-  /*
-    [1, 152, 189],
-    [73, 227, 206],
-    [216, 254, 181],
-    [254, 237, 177],
-    [254, 173, 84],
-    [209, 55, 78]
-    */
+  // [237, 248, 251],
+  // [204, 236, 230],
+  // [153, 216, 201],
+  // [102, 194, 164],
+  // [44, 162, 95],
+  // [0, 109, 44]
+  [42 * 1, 42 * 1, 42 * 1 + 20],
+  [42 * 2, 42 * 2, 42 * 2 + 20],
+  [42 * 3, 42 * 3, 42 * 3 + 20],
+  [42 * 4, 42 * 4, 42 * 4 + 20],
+  [42 * 5, 42 * 5, 42 * 5 + 20],
+  [42 * 6, 42 * 6, 42 * 6 + 20]
 ];
 
 function getTooltip({ object }) {
   if (!object) {
     return null;
   }
-  const lat = object.position[1];
-  const lng = object.position[0];
+  const lat = Math.round(100000 * object.position[1]) / 100000;
+  const lng = Math.round(100000 * object.position[0]) / 100000;
   const count = object.points.length;
 
-  return `\
-    latitude: ${Number.isFinite(lat) ? lat.toFixed(6) : ''}
-    longitude: ${Number.isFinite(lng) ? lng.toFixed(6) : ''}
-    ${count} Accidents`;
+  let kindDict = {};
+  let nameList = '';
+  object.points.forEach(point => {
+    if (kindDict[point[2]]) {
+      kindDict[point[2]]++;
+    } else {
+      kindDict[point[2]] = 1;
+    }
+    nameList += `<li>${point[3]}</li>`;
+  });
+
+  let countList = '';
+  Object.keys(kindDict).forEach(x => {
+    if (x !== 'null') {
+      countList = `<li>${x} : ${kindDict[x]}개</li>` + countList;
+    } else {
+      countList += `<li>그 외 : ${kindDict[x]}개</li>`;
+    }
+  });
+
+  return {
+    html: `\
+  <div>위도: ${lat}</div>
+  <div>경도: ${lng}</div>
+  <div>총 ${count} 개의 도서관이 이 부근에 있습니다.</div>
+  <div>
+    <ul>
+      ${countList}
+    <ul>
+  </div>
+  <div class="nameList">
+    ${nameList}
+  </div>
+    `};
 }
 
 /* eslint-disable react/no-deprecated */
 export default function App({
   data,
   mapStyle = 'mapbox://styles/mapbox/dark-v9',
-  radius = 600,
+  radius = 500,
   lowerPercentile = 0,
   upperPercentile = 100,
-  coverage = 1
+  coverage = 0.8
 }) {
   const layers = [
-    // reference: https://deck.gl/docs/api-reference/aggregation-layers/hexagon-layer
     new HexagonLayer({
       id: 'wifi',
       colorRange,
       coverage,
       data,
-      elevationRange: [0, 100],
-      elevationScale: data && data.length ? 50 : 0,
+      elevationRange: [5, 100],
+      elevationScale: 30,
       extruded: true,
       getPosition: d => d,
       pickable: true,
@@ -129,26 +155,8 @@ export default function App({
   );
 }
 
-function is_coordinates_valid(lng, lat) {
-  return (Number.isFinite(lng)
-    && Number.isFinite(lat)
-    && lat >= -90
-    && lat <= 90);
-}
-
-export function renderToDOM(container) {
-
-  // CSV version
-  fetch("locs_wifi_Seoul-UTF8.csv")
-    .then(response => response.text())
-    .then(function (text) {
-      const result = readString(text);
-      const data = result.data
-        // d[6] = longitude(경도), d[7] = latitude(위도)
-        .map(d => [Number(d[6]), Number(d[7])])
-        // 위도&경도 유효성 검사
-        .filter(d => is_coordinates_valid(...d));
-
-      render(<App data={data} />, container);
-    });
+export async function renderToDOM(container) {
+  let data = (await (await fetch("libs.json")).json())["DATA"].map(x => [+x.ydnts, +x.xcnts, x.lbrry_se_name, x.lbrry_name]);
+  console.log(data);
+  render(<App data={data} />, container);
 }
