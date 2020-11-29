@@ -3,7 +3,9 @@ import { render } from 'react-dom';
 import { StaticMap } from 'react-map-gl';
 import { AmbientLight, PointLight, LightingEffect } from '@deck.gl/core';
 import { HexagonLayer } from '@deck.gl/aggregation-layers';
+import { GeoJsonLayer } from '@deck.gl/layers';
 import DeckGL from '@deck.gl/react';
+import { readString } from "react-papaparse";
 
 // Set your mapbox token here
 let MAPBOX_TOKEN = process.env.MapboxAccessToken; // eslint-disable-line
@@ -50,12 +52,6 @@ const INITIAL_VIEW_STATE = {
 // 더 많은 세팅: https://colorbrewer2.org
 // set "Number of data classes" to 6
 export const colorRange = [
-  // [237, 248, 251],
-  // [204, 236, 230],
-  // [153, 216, 201],
-  // [102, 194, 164],
-  // [44, 162, 95],
-  // [0, 109, 44]
   [42 * 1, 42 * 1, 42 * 1 + 20],
   [42 * 2, 42 * 2, 42 * 2 + 20],
   [42 * 3, 42 * 3, 42 * 3 + 20],
@@ -65,9 +61,25 @@ export const colorRange = [
 ];
 
 function getTooltip({ object }) {
-  if (!object) {
-    return null;
+  if (!object) { return null; }
+  if (!object.position) {
+    // Tooltip for GeoJson Layer
+    return object && {
+      html: `\
+      <div>
+        <h1>${object.properties.adm_nm}</h1>
+        <div>인구 수</div>
+        <ul>
+        <li>전체 : ${object.data[3]}</li>
+        <li>남 : ${object.data[4]}</li>
+        <li>여 : ${object.data[5]}</li>
+        </ul>
+      </div>
+      `
+    };
   }
+
+  // Tooltip for hexagon layer
   const lat = Math.round(100000 * object.position[1]) / 100000;
   const lng = Math.round(100000 * object.position[0]) / 100000;
   const count = object.points.length;
@@ -92,11 +104,15 @@ function getTooltip({ object }) {
     }
   });
 
+  let region = object.points[0];
+
   return {
     html: `\
-  <div>위도: ${lat}</div>
+  <div>위도: ${lat}</div> 
   <div>경도: ${lng}</div>
-  <div>총 ${count} 개의 도서관이 이 부근에 있습니다.</div>
+  <div><strong>총 ${count} 개</strong>의 도서관이 이 부근에 있습니다.</div>
+  <div>이 구역이 위치한 ${region[4]} ${region[5]}의 인구는 ${region[7]}명으로,</div>
+  <div>인구 대비 도서관 개수는 <strong>십만 명당 ${Math.round(count * 100000 / region[7])}개</strong> 정도입니다.</div>
   <div>
     <ul>
       ${countList}
@@ -108,16 +124,48 @@ function getTooltip({ object }) {
     `};
 }
 
+// Check if given point `test` is inside a polygon `vert`.
+function checkPolyIn(vert, test) {
+  let n = vert.length;
+  var i, j, c = 0;
+  for (i = 0, j = n - 1; i < n; j = i++) {
+    if (((vert[i][1] > test[1]) != (vert[j][1] > test[1])) &&
+      (test[0] < (vert[j][0] - vert[i][0]) * (test[1] - vert[i][1]) / (vert[j][1] - vert[i][1]) + vert[i][0]))
+      c = !c;
+  }
+  return c;
+}
+
+// Convert population data into color
+function color(row) {
+  let value = +row.popRatio * 2 * 255;
+  return [value, value, value];
+}
+
 /* eslint-disable react/no-deprecated */
 export default function App({
   data,
   mapStyle = 'mapbox://styles/mapbox/dark-v9',
   radius = 500,
-  lowerPercentile = 0,
   upperPercentile = 100,
-  coverage = 0.8
+  coverage = 0.8,
+  geoJson
 }) {
   const layers = [
+    new GeoJsonLayer({
+      id: 'test',
+      data: geoJson,
+      opacity: 0.9,
+      stroked: false,
+      filled: true,
+      extruded: true,
+      wireframe: true,
+      getElevation: f => 0.1,
+      getFillColor: f => color(f),
+      getLineColor: [255, 255, 255],
+      pickable: true
+    }),
+
     new HexagonLayer({
       id: 'wifi',
       colorRange,
@@ -156,7 +204,68 @@ export default function App({
 }
 
 export async function renderToDOM(container) {
-  let data = (await (await fetch("libs.json")).json())["DATA"].map(x => [+x.ydnts, +x.xcnts, x.lbrry_se_name, x.lbrry_name]);
-  console.log(data);
-  render(<App data={data} />, container);
+  const file_pathes = [
+    "population.txt",
+    "libs.json",
+    "HangJeongDong_ver20200701.geojson"
+  ];
+
+  // Read all files asynchronously
+  const files = await Promise.all(file_pathes.map(f => fetch(f)));
+
+  // Parse population file
+  const proper = x => ['동', '계', '합계', '소계', '미상', '행정동'].indexOf(x[2]) < 0;
+  const fix = x => {
+    x = x.slice(1);
+    x[1] = x[1].replace(/[.]/g, '·');
+    for (let i = 2; i < 14; i++) {
+      x[i] = +x[i].replace(/,/g, '');
+    }
+    return x;
+  };
+  const parse = async file => readString(await file.text()).data.filter(proper).map(fix);
+  const pop = await parse(files[0]);
+
+  // Parse geoJson file
+  let geoJson = await files[2].json();
+  geoJson.features = geoJson.features.filter(x => x.properties.sidonm == '서울특별시');
+
+  // Build dictionary
+  let popData = {};
+  let popMax = 0;
+  geoJson.features.forEach(region => {
+    let name = region.properties.adm_nm.split(' ').pop();
+    popData[name] = 0;
+  });
+  pop.forEach(row => {
+    popData[row[1]] = row;
+    popMax = Math.max(popMax, row[3]);
+  });
+
+  // Map population data into geoJson
+  geoJson.features.forEach(region => {
+    let name = region.properties.adm_nm.split(' ').pop();
+    let row = popData[name];
+    region.data = row;
+    region.popRatio = row[3] / popMax;
+  });
+
+  // Parse library data
+  let data = (await (files[1]).json())["DATA"].map(x => [+x.ydnts, +x.xcnts, x.lbrry_se_name, x.lbrry_name]);
+
+  // Find region for library position
+  let regions = geoJson.features;
+  data.forEach((row, j) => {
+    let currRegion = null;
+    for (let i = 0; i < regions.length; i++) {
+      if (checkPolyIn(regions[i].geometry.coordinates[0][0], [row[0], row[1]])) {
+        currRegion = regions[i];
+        break;
+      }
+    }
+    if (currRegion) data[j] = row.concat(currRegion.data);
+    else console.log(row);
+  });
+
+  render(<App data={data} geoJson={geoJson} />, container);
 }
