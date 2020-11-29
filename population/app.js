@@ -31,8 +31,6 @@ const dirLight = new SunLight({
   timestamp: Date.UTC(2019, 7, 1, 22),
   color: [255, 255, 255],
   intensity: 1,
-  // _shadow: true
-  // _shadow: false
 });
 
 function HSVtoRGB(h, s, v) {
@@ -113,9 +111,8 @@ export default function App({ geoJson, ratioMean, mapStyle = 'mapbox://styles/ma
       opacity: 0.9,
       stroked: false,
       filled: true,
-      extruded: true,
+      extruded: false,
       wireframe: true,
-      getElevation: f => f.data.young[0] * 10,
       getFillColor: f => color((f.data.ratio / ratioMean) > 2 ? 2 : (f.data.ratio / ratioMean)),
       getLineColor: [255, 255, 255],
       pickable: true
